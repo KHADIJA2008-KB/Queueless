@@ -1,0 +1,6 @@
+{
+  "name": "QueueLess",
+  "description": "A lightweight queue management app for Pakistan that reduces physical waiting times in crowded public places with real-time tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

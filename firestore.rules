@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    // NOTE: Strictly mandating email verification as per instructions.
+    // If users see "Missing Permissions", ensure they have verified their Google account email.
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // --- Entity Validations ---
+    function isValidServiceQueue(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.averageServiceTime is number && data.averageServiceTime > 0 &&
+             data.currentTokenNumber is number &&
+             data.totalTokensIssued is number &&
+             data.status in ['open', 'closed'] &&
+             data.adminId == request.auth.uid;
+    }
+
+    function isValidQueueToken(data) {
+      return data.userName is string && data.userName.size() > 0 && data.userName.size() <= 50 &&
+             data.userId == request.auth.uid &&
+             data.adminId is string &&
+             data.status in ['waiting', 'serving', 'completed', 'cancelled'] &&
+             data.tokenNumber is number &&
+             data.joinedAt == request.time;
+    }
+
+    // --- Collection Routes ---
+    match /queues/{queueId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn(); // Queries for open queues are safe as they check status
+      
+      allow create: if isVerified() && isValidId(queueId) && isValidServiceQueue(incoming());
+      
+      allow update: if isVerified() && (
+        // Admin action: Manage Queue
+        (existing().adminId == request.auth.uid && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['currentTokenNumber', 'status', 'totalTokensIssued'])
+        )) ||
+        // User action: Join Queue (Increment tokens)
+        (incoming().diff(existing()).affectedKeys().hasOnly(['totalTokensIssued']) && 
+         incoming().totalTokensIssued == existing().totalTokensIssued + 1 &&
+         existing().status == 'open')
+      );
+
+      match /tokens/{tokenId} {
+        // Enforce Query Enforcer (Pillar 8): No get() in list, evaluate resource.data directly
+        allow list: if isSignedIn() && (
+            resource.data.userId == request.auth.uid || 
+            resource.data.adminId == request.auth.uid
+        );
+        
+        allow get: if isSignedIn() && (
+            existing().userId == request.auth.uid || 
+            existing().adminId == request.auth.uid
+        );
+
+        allow create: if isVerified() && isValidId(tokenId) && isValidQueueToken(incoming()) &&
+                      // Relational Sync: Ensure adminId matches the parent queue
+                      incoming().adminId == get(/databases/$(database)/documents/queues/$(queueId)).data.adminId &&
+                      // Integrity: Ensure token number matches the incremented total on the queue
+                      incoming().tokenNumber == get(/databases/$(database)/documents/queues/$(queueId)).data.totalTokensIssued;
+
+        allow update: if isVerified() && (
+          // User action: Cancel their own token
+          (existing().userId == request.auth.uid && 
+           incoming().status == 'cancelled' && 
+           incoming().diff(existing()).affectedKeys().hasOnly(['status']) &&
+           existing().status == 'waiting') ||
+          // Admin action: Serve or Complete token in their own queue
+          (existing().adminId == request.auth.uid && 
+           incoming().status in ['serving', 'completed'] && 
+           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'servedAt']) &&
+           (incoming().status != 'servedAt' || incoming().servedAt == request.time))
+        );
+        
+        allow delete: if false; // Tokens should be completed/cancelled, not deleted
+      }
+    }
+  }
+}

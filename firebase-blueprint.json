@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "ServiceQueue": {
+      "title": "Service Queue",
+      "description": "Represents a service center, clinic, or office managing a queue.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the service center."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of services offered."
+        },
+        "averageServiceTime": {
+          "type": "number",
+          "description": "Average time spent per person in minutes."
+        },
+        "currentTokenNumber": {
+          "type": "number",
+          "description": "The number currently being served."
+        },
+        "totalTokensIssued": {
+          "type": "number",
+          "description": "Total number of tokens issued for this queue."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "closed"],
+          "description": "Operational status of the queue."
+        },
+        "adminId": {
+          "type": "string",
+          "description": "UID of the user who manages this queue."
+        }
+      },
+      "required": ["name", "averageServiceTime", "currentTokenNumber", "totalTokensIssued", "status", "adminId"]
+    },
+    "QueueToken": {
+      "title": "Queue Token",
+      "description": "Represents an individual entry in a specific service queue.",
+      "type": "object",
+      "properties": {
+        "tokenNumber": {
+          "type": "number",
+          "description": "The unique number assigned to this user in the queue."
+        },
+        "userName": {
+          "type": "string",
+          "description": "Name of the person who joined."
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the person who joined."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["waiting", "serving", "completed", "cancelled"],
+          "description": "Current status of the token holder."
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the user joined the queue."
+        },
+        "servedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the user started being served."
+        }
+      },
+      "required": ["tokenNumber", "userName", "userId", "status", "joinedAt"]
+    }
+  },
+  "firestore": {
+    "/queues/{queueId}": {
+      "schema": "ServiceQueue",
+      "description": "Collection of queues for various services."
+    },
+    "/queues/{queueId}/tokens/{tokenId}": {
+      "schema": "QueueToken",
+      "description": "Subcollection of tokens within a specific queue."
+    }
+  }
+}
